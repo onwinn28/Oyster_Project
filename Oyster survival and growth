@@ -1,0 +1,27 @@
+library(readr)
+library(dplyr)
+library(lubridate)
+
+# 1. Load the data
+Oyster_Growth <- read_csv("Desktop/Master Data_Update for 2026 in progress(nohistology).xlsx - Oyster Survival & Growth.csv")
+
+# 2. Check your column names to see exactly what R named them
+print(colnames(Oyster_Growth))
+
+# 3. Clean and process the data
+mortality_summary <- Oyster_Growth %>%
+  # Create the Year column from the Date text
+  mutate(Year = year(mdy(Date))) %>%
+  
+  # Filter for dead oysters
+  filter(`Alive? (1/0)` == 0) %>%
+  
+  # Group using 'Piot' (or whichever name printed in step 2)
+  # Wrapping it in backticks accommodates any hidden spacing typos
+  group_by(Site, Year, `Plot`) %>% 
+  
+  # Count deaths
+  summarise(Deaths = n(), .groups = "drop")
+
+# 4. View results
+print(mortality_summary)
