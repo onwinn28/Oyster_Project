@@ -1,0 +1,131 @@
+#### i. THEMES ####
+theme_evan <- theme_bw() +
+  theme(
+    panel.grid.minor = element_blank(),
+    panel.grid.major.y = element_line(linetype = 'dashed',color = 'grey70'),
+    panel.grid.major.x = element_blank(),
+    # panel.grid = element_blank(),
+    legend.position = 'none',
+    panel.border = element_rect(size = 0.5),
+    text = element_text(size=8),
+    axis.text = element_text(size = 8), 
+    plot.title = element_text(size = 9)
+  )
+
+theme_evan_facet <- theme_bw() +
+  theme(
+    panel.grid.minor = element_blank(),
+    panel.grid.major.y = element_blank(),
+    panel.grid.major.x = element_blank(),
+    # panel.grid = element_blank(),
+    # legend.position = 'none',
+    panel.border = element_rect(size = 0.5),
+    strip.background = element_rect(fill = 'white'),
+    text = element_text(size=12),
+    axis.text = element_text(size = 12), 
+    plot.title = element_text(size = 13)
+  )
+season_facet <- theme_evan_facet + theme(
+  legend.position = 'none', 
+  strip.background = element_blank(),
+  strip.text = element_text(hjust = 0, margin = margin(0,0,0,0, unit = 'pt'))
+)
+
+theme_dark_mode <- season_facet +
+  theme(
+    axis.title.x = element_markdown(color = 'white'),
+    axis.title.y = element_markdown(color = 'white'),
+    strip.text.x.top = element_markdown(color = 'white', size=12),
+    panel.grid.major.x = element_line(color = 'grey90', linewidth = 0.25),
+    panel.grid.major.y = element_line(color = 'grey90', linewidth = 0.25),
+    panel.grid.minor.x = element_line(color = 'grey90', linewidth = 0.1),
+    panel.grid.minor.y = element_line(color = 'grey90', linewidth = 0.1),
+    text = element_text(color = 'white'),
+    panel.background = element_rect(fill = 'black'),
+    plot.background = element_rect(fill = 'black'),
+    # axis.text = element_markdown(color = 'white'),
+    axis.text = element_text(color = 'white'),
+    panel.border = element_rect(color = 'white'),
+    legend.background = element_rect(color = 'white', fill = 'black'),
+    legend.key = element_rect(fill = 'black')
+  ) 
+
+####Data Analysis (general)####
+
+library(readr)
+library(dplyr)
+library(lubridate)
+
+setwd("~")
+
+Shell_Bags <- read_csv("Desktop/2026_analysis_shell bags - Sheet1.csv")
+
+spat_annual_summary <- Shell_Bags %>%
+  mutate(
+    Clean_Date = ifelse(is.na(`Date processed`), `Date collected?`, `Date processed`),
+    Year       = year(mdy(Clean_Date))
+  ) %>%
+  filter(!is.na(Year), !is.na(total_spat)) %>%
+  
+  group_by(Year) %>%
+  summarise(
+    Avg_Total_Spat_Per_Bag = mean(total_spat, na.rm = TRUE),
+    Avg_Live_Spat_Per_Bag  = mean(spat_alive, na.rm = TRUE),
+    Avg_Dead_Spat_Per_Bag  = mean(spat_dead, na.rm = TRUE),
+    Total_Bags_Sampled     = n(),
+    .groups = "drop"
+  )
+
+print(spat_annual_summary)
+
+zone_summary_2024 <- Shell_Bags %>%
+  mutate(
+    Clean_Date = ifelse(is.na(`Date processed`), `Date collected?`, `Date processed`),
+    Year       = year(mdy(Clean_Date)),
+    Zone       = tools::toTitleCase(tolower(`zone (low, mid, high)`))
+  ) %>%
+  filter(Year == 2024, !is.na(Zone), !is.na(total_spat)) %>%
+  group_by(Zone) %>%
+  summarise(
+    Avg_Total_Spat_Per_Bag = mean(total_spat, na.rm = TRUE),
+    Avg_Live_Spat_Per_Bag  = mean(spat_alive, na.rm = TRUE),
+    Avg_Dead_Spat_Per_Bag  = mean(spat_dead, na.rm = TRUE),
+    Total_Bags_Sampled     = n(),
+    .groups = "drop"
+  ) %>%
+  arrange(factor(Zone, levels = c("Low", "Mid", "High")))
+
+print(zone_summary_2024)
+
+library(ggplot2)
+
+seasonal_summary_2024 <- Shell_Bags %>%
+  mutate(
+    Date_Collected = mdy(`Date collected?`),
+    Year           = year(Date_Collected),
+    Zone           = tools::toTitleCase(tolower(`zone (low, mid, high)`))
+  ) %>%
+  filter(Year == 2024, !is.na(Zone), !is.na(total_spat)) %>%
+  group_by(Date_Collected, Zone) %>%
+  summarise(
+    Avg_Total_Spat = mean(total_spat, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(Zone = factor(Zone, levels = c("Low", "Mid", "High")))
+
+ggplot(seasonal_summary_2024, aes(x = Date_Collected, y = Avg_Total_Spat, color = Zone, group = Zone)) +
+  geom_line(linewidth = 1.2) +
+  geom_point(size = 3) +
+  scale_color_manual(values = c("Low" = "#84A6E7", "Mid" = "#7BC8E7", "High" = "#8EE4DD")) +
+  scale_x_date(date_breaks = "2 weeks", date_labels = "%b %d") +
+  theme_evan +
+  labs(
+    title = "Average Total Spat per Bag Throughout the 2024 Field Season",
+    x = "Date Collected",
+    y = "Average Spat per Bag",
+    color = "Tidal Zone"
+  ) +
+  theme(
+    plot.title = element_text(face = "bold", size = 13),
+    axis.text.x = element_text(angle = 45, hjust = 1) # Rotate dates to prevent overlap
+  )
