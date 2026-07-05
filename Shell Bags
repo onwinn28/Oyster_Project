@@ -109,9 +109,11 @@ seasonal_summary_2024 <- Shell_Bags %>%
   group_by(Date_Collected, Zone) %>%
   summarise(
     Avg_Total_Spat = mean(total_spat, na.rm = TRUE),
-    .groups = "drop"
+    .groups = "drop",
   ) %>%
+  print(n=31)
   mutate(Zone = factor(Zone, levels = c("Low", "Mid", "High")))
+
 
 ggplot(seasonal_summary_2024, aes(x = Date_Collected, y = Avg_Total_Spat, color = Zone, group = Zone)) +
   geom_line(linewidth = 1.2) +
@@ -129,3 +131,94 @@ ggplot(seasonal_summary_2024, aes(x = Date_Collected, y = Avg_Total_Spat, color 
     plot.title = element_text(face = "bold", size = 13),
     axis.text.x = element_text(angle = 45, hjust = 1) # Rotate dates to prevent overlap
   )
+
+#other species copresense with oysters
+mussel_presence <- mean(Shell_Bags$Mussel > 0, na.rm = TRUE)
+barnacle_presense <- mean(Shell_Bags$Barnacle > 0, na.rm = TRUE)
+
+Mussels <- Shell_Bags %>%
+  filter(Mussel > 0, !is.na(Mussel))
+
+Algae_and_mussel <- mean(Mussels$Seaweed > 0, na.rm = TRUE)
+
+#Statisticly signifant diff. in the number of spat throughout the year
+Corrected_dates <- Shell_Bags %>%
+  mutate(
+    Clean_Date = ifelse(is.na(`Date processed`), `Date collected?`, `Date processed`),
+    Year       = year(mdy(Clean_Date))
+  ) %>%
+  filter(!is.na(Year), !is.na(total_spat))
+  
+compare_data <- Corrected_dates %>%
+  filter(`Date collected?` %in% c("10/2/24", "9/19/24"))
+
+compare_data %>%
+  group_by(`Date collected?`) %>%
+  summarise(
+    Avg_Spat = mean(spat_alive, na.rm = TRUE),
+    Sample_Size = n()
+  )
+
+wilcox.test(spat_alive ~ `Date collected?`, data = compare_data)
+
+#New Graphic
+library(tidyverse)
+
+df_clean <- Shell_Bags %>%
+  filter(!is.na(`Date collected?`), !is.na(spat_alive)) %>%
+  mutate(Date_Parsed = lubridate::mdy(`Date collected?`)) %>%
+  filter(lubridate::year(Date_Parsed) == 2024)
+
+global_p <- kruskal.test(spat_alive ~ Date_Parsed, data = df_clean)$p.value
+
+ggplot(df_clean, aes(x = Date_Parsed, y = spat_alive, group = Date_Parsed)) +
+  geom_boxplot(aes(fill = as.factor(`Date collected?`)), alpha = 0.6, outlier.shape = NA) +
+  geom_jitter(width = 0.5, alpha = 0.5, color = "black") +
+  scale_x_date(date_labels = "%m/%d/%y", date_breaks = "1 week") +
+  labs(
+    title = "Spat Distribution Over Time",
+    subtitle = paste0("Global Kruskal-Wallis p-value: ", round(global_p, 5)),
+    x = "Date Collected (Chronological)",
+    y = "Live Spat Count",
+    fill = "Date"
+  ) +
+  theme_evan +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "none"
+  )
+
+#New graphic
+library(tidyverse)
+
+df_clean <- Shell_Bags %>%
+  filter(!is.na(`Date collected?`), !is.na(spat_alive)) %>%
+  mutate(Date_Parsed = lubridate::mdy(`Date collected?`)) %>%
+  filter(lubridate::year(Date_Parsed) == 2024)
+
+pairwise_results <- pairwise.wilcox.test(
+  x = df_clean$spat_alive, 
+  g = df_clean$`Date collected?`, 
+  p.adjust.method = "holm"
+)
+
+# 2. Extract the matrix safely
+p_matrix <- honest_p <- pairwise_results$p.value
+
+# 3. Force it into a long-form dataframe manually to avoid pmap issues
+p_df <- as.data.frame(p_matrix) %>%
+  rownames_to_column(var = "Date1") %>%
+  pivot_longer(-Date1, names_to = "Date2", values_to = "p_value") %>%
+  filter(!is.na(p_value)) # Removes the empty half of the grid
+
+# 4. Create the heatmap plot
+ggplot(p_df, aes(x = Date1, y = Date2, fill = p_value)) +
+  geom_tile(color = "white", lwd = 0.5) +
+  scale_fill_gradient2(low = "#d7191c", mid = "#ffffbf", high = "#2c7bb6", 
+                       midpoint = 0.05, name = "p-value") +
+  geom_text(aes(label = sprintf("%.3f", p_value)), color = "black", size = 3) +
+  labs(title = "Pairwise Significance Matrix",
+       subtitle = "Red boxes indicate significant differences (p < 0.05)",
+       x = "", y = "") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
