@@ -1,7 +1,7 @@
 # Oyster_Project
 library(readr)
-X2026_analysis_Shoreline_Survey_Data_Cleaned_Data <- read_csv("Downloads/2026-analysis_Shoreline Survey Data - Cleaned Data.csv")
-Clean_data <- X2026_analysis_Shoreline_Survey_Data_Cleaned_Data
+X2026_analysis_Shoreline_Survey_Data_Cleaned_Data_2 <- read_csv("Downloads/2026-analysis_Shoreline Survey Data - Cleaned Data-2.csv")
+Clean_data <- X2026_analysis_Shoreline_Survey_Data_Cleaned_Data_2
 summary(Clean_data)
 
 # This keeps the WHOLE dataframe, but drops rows where the oyster count is NA
@@ -9,8 +9,8 @@ clean_oysters <- Clean_data %>%
   filter(!is.na(`Oysters per quad (adjusted for quad size)`))
 mean(clean_osyters)
 
-# What percentage of plots have oysters?
-pct_oysters <- mean(clean_oysters > 0) * 100
+#percent of quadrats with oysters
+pct_oysters <- mean(clean_oysters$`Oysters per quad (adjusted for quad size)` > 0, na.rm = TRUE) * 100
 pct_oysters
 
 #Mean size of oysters
@@ -358,3 +358,35 @@ ggplot(plot_summary_mid_low, aes(x = factor(Year), y = Mean_Density, fill = `Zon
        fill = "Zone (mid, low)") + # <-- Changed backticks to quotation marks here!
   theme_minimal() +
   scale_fill_manual(values = c("mid" = "#8DC8E4", "low" = "#E7B196"))
+
+# 1. Load data and clean names
+library(dplyr)
+install.packages("janitor")
+library(janitor)
+data <- X2026_analysis_Shoreline_Survey_Data_Cleaned_Data_2 %>%
+  clean_names()
+
+# 2. Isolate the counts into variables for clarity
+# Total quadrats with oysters vs. total quadrats with barnacles
+total_oysters <- sum(data$american_osyter_1_0 == 1, na.rm = TRUE)
+total_barnacles <- sum(data$acorn_barnacles == 1, na.rm = TRUE)
+
+# Quadrats where BOTH are present
+both_present <- sum(data$american_osyter_1_0 == 1 & data$acorn_barnacles == 1, na.rm = TRUE)
+
+# 3. Calculate Conditional Probabilities
+prob_barnacle_given_oyster <- both_present / total_oysters
+prob_oyster_given_barnacle <- both_present / total_barnacles
+
+# Print the descriptive results
+cat("1. If you find an oyster, the probability you find a barnacle is:", 
+    round(prob_barnacle_given_oyster * 100, 2), "%\n")
+
+cat("2. If you find a barnacle, the probability you find an oyster is:", 
+    round(prob_oyster_given_barnacle * 100, 2), "%\n")
+
+# 4. Statistical Test: Are these two proportions significantly different?
+# We compare the number of successes (both present) out of their respective totals
+test_result <- prop.test(c(both_present, both_present), c(total_oysters, total_barnacles))
+
+print(test_result)
