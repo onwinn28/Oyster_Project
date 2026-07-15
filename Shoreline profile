@@ -1,79 +1,74 @@
-# Oyster_Project
+# ==============================================================================
+# OYSTER PROJECT ANALYSIS SCRIPT
+# ==============================================================================
+
+#### 1. Setup, Data Loading & Initial Cleaning ####
+
 library(readr)
+library(dplyr)
+library(lubridate)
+library(stringr)
+library(janitor)
+
+# Load raw survey data
 X2026_analysis_Shoreline_Survey_Data_Cleaned_Data_2 <- read_csv("Downloads/2026-analysis_Shoreline Survey Data - Cleaned Data-2.csv")
 Clean_data <- X2026_analysis_Shoreline_Survey_Data_Cleaned_Data_2
 summary(Clean_data)
 
-# This keeps the WHOLE dataframe, but drops rows where the oyster count is NA
+# Drop rows where oyster count is NA to isolate oyster-specific records
 clean_oysters <- Clean_data %>% 
   filter(!is.na(`Oysters per quad (adjusted for quad size)`))
-mean(clean_osyters)
 
-#percent of quadrats with oysters
+
+#### 2. General Descriptive Statistics ####
+
+# Global mean oyster density
+mean(clean_oysters$`Oysters per quad (adjusted for quad size)`) # Fixed typo: clean_osyters -> clean_oysters
+
+# Percentage of quadrats with oysters present
 pct_oysters <- mean(clean_oysters$`Oysters per quad (adjusted for quad size)` > 0, na.rm = TRUE) * 100
 pct_oysters
 
-#Mean size of oysters
+# Mean shell length (SL) of all measured oysters
 Clean_data$`SL (mm)` <- as.numeric(Clean_data$`SL (mm)`)
 Mean_size <- mean(Clean_data$`SL (mm)`, na.rm = TRUE)
 Mean_size
 
-#Descritpive statstics for dead and alive oysters
-alive_data <- Clean_data[
-  Clean_data$`Alive (1/0)` == 1,
-]
+
+#### 3. Descriptive Stats: Alive vs. Dead Oysters ####
+
+# Subset alive oysters and compute metrics
+alive_data <- Clean_data[Clean_data$`Alive (1/0)` == 1, ]
 Size_alive_summary <- summary(alive_data$`SL (mm)`, na.rm = TRUE)
-Size_alive_mean <- mean(alive_data$`SL (mm)`, na.rm = TRUE)
-Size_alive_median <- median(alive_data$`SL (mm)`, na.rm = TRUE)
-Size_alive_sd <- sd(alive_data$`SL (mm)`, na.rm = TRUE)
-Size_alive_var <- var(alive_data$`SL (mm)`, na.rm = TRUE)
-Size_alive_min <- min(alive_data$`SL (mm)`, na.rm = TRUE)
-Size_alive_max <- max(alive_data$`SL (mm)`, na.rm = TRUE)
+Size_alive_mean    <- mean(alive_data$`SL (mm)`, na.rm = TRUE)
+Size_alive_median  <- median(alive_data$`SL (mm)`, na.rm = TRUE)
+Size_alive_sd      <- sd(alive_data$`SL (mm)`, na.rm = TRUE)
+Size_alive_var     <- var(alive_data$`SL (mm)`, na.rm = TRUE)
+Size_alive_min     <- min(alive_data$`SL (mm)`, na.rm = TRUE)
+Size_alive_max     <- max(alive_data$`SL (mm)`, na.rm = TRUE)
 Size_alive_median
 
-dead_data <- Clean_data[
-  Clean_data$`Alive (1/0)` == 0,
-]
+# Subset dead oysters and compute metrics
+dead_data <- Clean_data[Clean_data$`Alive (1/0)` == 0, ]
 Size_dead_summary <- summary(dead_data$`SL (mm)`, na.rm = TRUE)
-Size_dead_mean <- mean(dead_data$`SL (mm)`, na.rm = TRUE)
-Size_dead_median <- median(dead_data$`SL (mm)`, na.rm = TRUE)
-Size_dead_sd <- sd(dead_data$`SL (mm)`, na.rm = TRUE)
-Size_dead_var <- var(dead_data$`SL (mm)`, na.rm = TRUE)
-Size_dead_min <- min(dead_data$`SL (mm)`, na.rm = TRUE)
-Size_dead_max <- max(dead_data$`SL (mm)`, na.rm = TRUE)
+Size_dead_mean    <- mean(dead_data$`SL (mm)`, na.rm = TRUE)
+Size_dead_median  <- median(dead_data$`SL (mm)`, na.rm = TRUE)
+Size_dead_sd      <- sd(dead_data$`SL (mm)`, na.rm = TRUE)
+Size_dead_var     <- var(dead_data$`SL (mm)`, na.rm = TRUE)
+Size_dead_min     <- min(dead_data$`SL (mm)`, na.rm = TRUE)
+Size_dead_max     <- max(dead_data$`SL (mm)`, na.rm = TRUE)
 
-library(dplyr)
 
-# Use Clean_data because it contains the 'Site' column
-site_counts <- Clean_data %>% 
-  count(Site)
+#### 4. Spatial Data Preparation & Geographic Distance ####
 
-print(site_counts)
-
-library(dplyr)
-library(lubridate)
-library(stringr)
-# Use Clean_data so R can find the Site and Date columns
-site_year_counts <- Clean_data %>%
-  mutate(
-    Site = str_trim(Site),
-    Year = year(mdy(Date))
-  ) %>%
-  filter(Year != 2027) %>% 
-  # Count the remaining combinations
-  count(Site, Year)
-
-print(site_year_counts)
-
-library(dplyr)
-library(lubridate)
-library(stringr)
-install.packages("leaflet")
-library(leaflet)
-install.packages("geosphere")
 library(geosphere)
 
-# 1. Clean your map data (including your coordinate fix)
+# Filter for coordinate-bearing rows and clean outliers
+clean_oysters_coordinates <- Clean_data %>%
+  filter(!is.na(Latitude)) %>%
+  filter(!`Unique Quad (#)` %in% c("DM-26-M-1", "DR-23-L-23"))
+
+# Correct coordinate orientations (fixing negative latitude flips)
 cleaned_data <- clean_oysters_coordinates %>%
   mutate(
     Year = year(mdy(Date)),
@@ -86,84 +81,32 @@ cleaned_data <- clean_oysters_coordinates %>%
   ) %>%
   filter(!is.na(Correct_Lat), !is.na(Correct_Lon), Year != 2027)
 
-# 2. Calculate distance between consecutive quadrats
+# Calculate shoreline distances (meters and miles) between consecutive quadrats
 shoreline_distances <- cleaned_data %>%
-  # Arrange by site, year, zone, and quadrat number to ensure chronological order
   arrange(Site, Year, `Zone (mid, low)`, `Quad (#)`) %>%
   group_by(Site, Year) %>%
   mutate(
-    # Calculate distance (in meters) from the PREVIOUS quadrat row
     dist_from_prev = distHaversine(
       cbind(lag(Correct_Lon), lag(Correct_Lat)), 
       cbind(Correct_Lon, Correct_Lat)
     )
   ) %>%
-  # 3. Sum the distances up for each site and year
   summarise(
     Total_Distance_Meters = sum(dist_from_prev, na.rm = TRUE),
-    Total_Distance_Miles = Total_Distance_Meters * 0.000621371, # Convert to miles
+    Total_Distance_Miles = Total_Distance_Meters * 0.000621371,
     Total_Quadrats = n(),
     .groups = "drop"
   )
+
 print(shoreline_distances)
 
-View(X2026_analysis_Shoreline_Survey_Data_Cleaned_Data)
-clean_oysters_coordinates <- Clean_data %>%
-  filter(!is.na(Latitude))
 
-library(dplyr)
-clean_oysters_coordinates <- clean_oysters_coordinates %>% 
-  filter(`Unique Quad (#)` != "DM-26-M-1")
-clean_oysters_coordinates <- clean_oysters_coordinates %>% 
-  filter(`Unique Quad (#)` != "DR-23-L-23")
+#### 5. Interactive Mapping (Leaflet) ####
 
-# 1. Clean the dataset (fix flipped coordinates and extract Year)
+library(leaflet)
+
+# Prepare mapping specific dataset
 map_data <- clean_oysters_coordinates %>%
-  mutate(
-    Year = year(mdy(Date)),
-    Lat_num = as.numeric(Latitude), na.rm = "TRUE",
-    Lon_num = as.numeric(Longitude), na.rm = "TRUE"
-  ) %>%
-  # AUTOMATIC FIX: If Latitude is negative, flip Lat and Lon back to normal
-  mutate(
-    Correct_Lat = ifelse(!is.na(Lat_num) & Lat_num < 0, Lon_num, Lat_num),
-    Correct_Lon = ifelse(!is.na(Lat_num) & Lat_num < 0, Lat_num, Lon_num)
-  ) %>%
-  #Remove rows missing coordinates or from the year 2027
-  filter(!is.na(Correct_Lat), !is.na(Correct_Lon), Year != 2027)
-# 2. Set up color coding for each survey year
-year_colors <- colorFactor(palette = "viridis", domain = map_data$Year)
-# 3. Generate the interactive map
-leaflet(map_data) %>%
-  addProviderTiles(providers$Esri.WorldImagery) %>% # Adds real satellite imagery
-  addCircleMarkers(
-    lng = ~Correct_Lon, 
-    lat = ~Correct_Lat, 
-    color = ~year_colors(Year),
-    radius = 4, 
-    stroke = FALSE, 
-    fillOpacity = 0.8,
-    popup = ~paste("Site:", Site, "<br>Year:", Year) # Click point to see info
-  ) %>%
-  addLegend(
-    pal = year_colors, 
-    values = ~Year, 
-    title = "Year Surveyed", 
-    position = "bottomright"
-  )
-
-# Make sure to install and load the ggspatial package
-install.packages("ggspatial")
-install.packages(c("prettymapr", "rosm"))
-library(prettymapr)
-library(rosm)
-library(ggplot2)
-library(dplyr)
-library(lubridate)
-library(stringr)
-
-map_data <- Clean_data %>%
-  filter(!`Unique Quad (#)` %in% c("DM-26-M-1", "DR-23-L-23")) %>%
   mutate(
     Year = year(mdy(Date)),
     Lat_num = as.numeric(Latitude),
@@ -175,22 +118,46 @@ map_data <- Clean_data %>%
   ) %>%
   filter(!is.na(Correct_Lat), !is.na(Correct_Lon), Year != 2027)
 
-library(dplyr)
-library(lubridate)
+# Set up color coding for each survey year
+year_colors <- colorFactor(palette = "viridis", domain = map_data$Year)
+
+# Generate Leaflet Interactive Map with Satellite Imagery
+leaflet(map_data) %>%
+  addProviderTiles(providers$Esri.WorldImagery) %>% 
+  addCircleMarkers(
+    lng = ~Correct_Lon, 
+    lat = ~Correct_Lat, 
+    color = ~year_colors(Year),
+    radius = 4, 
+    stroke = FALSE, 
+    fillOpacity = 0.8,
+    popup = ~paste("Site:", Site, "<br>Year:", Year)
+  ) %>%
+  addLegend(
+    pal = year_colors, 
+    values = ~Year, 
+    title = "Year Surveyed", 
+    position = "bottomright"
+  )
+
+
+#### 6. Static Mapping & Faceting (ggplot2 & ggspatial) ####
+
+# Install and load map plotting dependencies
+# install.packages("ggspatial")
+# install.packages(c("prettymapr", "rosm"))
+library(prettymapr)
+library(rosm)
 library(ggplot2)
 library(ggspatial)
 
-# Check your new mapping dataset
+# Check your mapping dataset
 head(map_data)
-# 2. Plot the shoreline shape faceted by Year over a map
+
+# Plot shoreline footprint faceted by Year over dynamic tile layer
 ggplot(map_data) +
-  # STEP A: Add the background map tiles underneath the data
-  # Options for type include: "cartolight" (clean & minimal), "osm" (standard OpenStreetMap), or "hotstyle"
   annotation_map_tile(type = "cartolight", zoom = 14, progress = "none") + 
-  # STEP B: Draw your dots over the map
-  # Note: Moved aes() inside geom_point so it doesn't conflict with the map layer
   geom_point(aes(x = Correct_Lon, y = Correct_Lat, color = Site), alpha = 0.8, size = 1.2) +
-  # STEP C: Force R to recognize the coordinates as actual GPS data (WGS84)
   coord_sf(crs = 4326) + 
   facet_wrap(~Year, ncol = 2) + 
   theme_minimal() +
@@ -206,34 +173,51 @@ ggplot(map_data) +
     axis.text.x = element_text(angle = 45, hjust = 1)
   )
 
-library(dplyr)
-library(lubridate)
 
-# 1. Add the Year column to your existing dataset (keeping all other columns)
+#### 7. Site & Temporal Density Summaries ####
+
+# Preparatory step: extract survey year
 oyster_prep <- clean_oysters %>%
   mutate(Year = year(mdy(Date)))
 
-# 2. Group and summarize
-avg_density_by_year <- oyster_prep %>%
+# Count of surveys per site
+site_counts <- Clean_data %>% 
+  count(Site)
+print(site_counts)
+
+# Count of surveys per site per year
+site_year_counts <- Clean_data %>%
+  mutate(
+    Site = str_trim(Site),
+    Year = year(mdy(Date))
+  ) %>%
+  filter(Year != 2027) %>% 
+  count(Site, Year)
+print(site_year_counts)
+
+# A. Average density of oysters overall by year
+avg_density_by_year_site <- oyster_prep %>%
   group_by(Year) %>%
   summarize(
     Avg_Oysters_Per_Quad = mean(`Oysters per quad (adjusted for quad size)`, na.rm = TRUE),
-    Total_Quads_Sampled = n()
+    Total_Quads_Sampled = n(),
+    .groups = "drop"
   )
+print(avg_density_by_year_site)
 
-avg_density_by_year
-# --- B. Broken Down by Site and Year ---
-
+# B. Average density of oysters broken down by Site and Year
 avg_density_by_site_year <- oyster_prep %>%
   filter(Year != 2027) %>% 
   group_by(Site, Year) %>%
   summarize(
     Avg_Oysters_Per_Quad = mean(`Oysters per quad (adjusted for quad size)`, na.rm = TRUE),
-    Total_Quads_Sampled = n()
+    Total_Quads_Sampled = n(),
+    .groups = "drop"
   ) %>%
   arrange(Site, Year)
-avg_density_by_site_year
+print(avg_density_by_site_year)
 
+# C. Species presence/absence (American vs European)
 avg_density_by_species <- oyster_prep %>%
   group_by(Site, Year) %>%
   summarize(
@@ -241,11 +225,10 @@ avg_density_by_species <- oyster_prep %>%
     Avg_European_Oyster = mean(`European Oyster (1/0)`, na.rm = TRUE),
     .groups = "drop"
   )
-avg_density_by_species
+print(avg_density_by_species)
 
-#Alive vs. Dead
+# D. Cohort Condition: Proportion Alive vs Dead
 avg_alive_vs_dead <- oyster_prep %>%
-  # Filter to rows where alive/dead status was actually recorded
   filter(!is.na(`Alive (1/0)`)) %>% 
   group_by(Site, Year) %>%
   summarize(
@@ -254,22 +237,21 @@ avg_alive_vs_dead <- oyster_prep %>%
     Proportion_Dead = 1 - mean(`Alive (1/0)`, na.rm = TRUE),
     .groups = "drop"
   )
-avg_alive_vs_dead
+print(avg_alive_vs_dead)
 
-library(ggplot2)
-library(dplyr)
-library(lubridate)
-# Filter and clean rows specifically containing size data
+
+#### 8. Size-Frequency Distributions (Histograms) ####
+
+# Extract shell length (SL) data
 size_data <- clean_oysters %>%
   mutate(
     Year = year(mdy(Date)),
     SL_num = as.numeric(`SL (mm)`),
     Status = ifelse(`Alive (1/0)` == 1, "Alive", "Dead")
   ) %>%
-  # Keep only valid measurements and remove the 2027 entry
   filter(!is.na(SL_num), !is.na(Status), Year != 2027)
-size_data
 
+# Size distribution overall by year
 ggplot(size_data, aes(x = SL_num)) +
   geom_histogram(binwidth = 10, fill = "steelblue", color = "white", alpha = 0.8) +
   facet_wrap(~Year, ncol = 2) + 
@@ -279,7 +261,8 @@ ggplot(size_data, aes(x = SL_num)) +
     x = "Shell Length (SL, mm)",
     y = "Count of Oysters"
   )
-#by year and site
+
+# Size distribution by site and year
 ggplot(size_data, aes(x = SL_num)) +
   geom_histogram(binwidth = 10, fill = "steelblue", color = "white", alpha = 0.8) +
   facet_grid(Site ~ Year) + 
@@ -289,7 +272,8 @@ ggplot(size_data, aes(x = SL_num)) +
     x = "Shell Length (SL, mm)",
     y = "Count of Oysters"
   )
-#Dead Oysters — Do they all die at the same size?
+
+# Mortality size-class assessment
 ggplot(filter(size_data, Status == "Dead"), aes(x = SL_num)) +
   geom_histogram(binwidth = 10, fill = "tomato", color = "white", alpha = 0.8) +
   facet_wrap(~Year, ncol = 2) + 
@@ -300,11 +284,11 @@ ggplot(filter(size_data, Status == "Dead"), aes(x = SL_num)) +
     x = "Shell Length (SL, mm)",
     y = "Count of Dead Oysters"
   )
-#Are oysters are large enough for reproduction
+
+# Reproductive size threshold assessment (Live Oysters)
 ggplot(filter(size_data, Status == "Alive"), aes(x = SL_num)) +
   geom_histogram(binwidth = 10, fill = "darkolivegreen4", color = "white", alpha = 0.8) +
   facet_wrap(~Year, ncol = 2) + 
-  # Add visual reference line for minimum reproductive size
   geom_vline(xintercept = 35, linetype = "dashed", color = "red", size = 0.8) +
   theme_minimal() +
   labs(
@@ -313,7 +297,8 @@ ggplot(filter(size_data, Status == "Alive"), aes(x = SL_num)) +
     x = "Shell Length (SL, mm)",
     y = "Count of Live Oysters"
   )
-#Alive vs. Dead plot
+
+# Combined Cohort Histograms: Alive vs. Dead Over Time
 ggplot(size_data, aes(x = SL_num, fill = Status)) +
   geom_histogram(binwidth = 10, color = "white", alpha = 0.6, position = "identity") +
   facet_wrap(~Year, ncol = 2) +
@@ -327,20 +312,19 @@ ggplot(size_data, aes(x = SL_num, fill = Status)) +
     fill = "Condition Status"
   )
 
-# T-test by tidal zone
-# Filter for the years AND just two specific zones
+
+#### 9. Statistical Modeling: Tidal Zone Contrast ####
+
+# Subset data to mid vs low tidal zones (2023-2026)
 t_test_data <- oyster_prep %>%
   filter(Year >= 2023 & Year <= 2026) %>%
-  filter(`Zone (mid, low)` %in% c("mid", "low")) %>%  # <-- Change to your exact zone names
+  filter(`Zone (mid, low)` %in% c("mid", "low")) %>%
   filter(!is.na(`Oysters per quad (adjusted for quad size)`))
 
-# Now the t-test will run!
+# Run independent t-test for density variations across zones
 t.test(`Oysters per quad (adjusted for quad size)` ~ `Zone (mid, low)`, data = t_test_data)
 
-#visualization to go with T-test!
-library(ggplot2)
-library(dplyr)
-
+# Visualization of Tidal Zone Density over time
 plot_summary_mid_low <- oyster_prep %>%
   filter(Year >= 2023 & Year <= 2026) %>%
   filter(`Zone (mid, low)` %in% c("mid", "low")) %>% 
@@ -355,38 +339,207 @@ ggplot(plot_summary_mid_low, aes(x = factor(Year), y = Mean_Density, fill = `Zon
        subtitle = "Annual comparison from 2023 to 2026",
        x = "Year",
        y = "Mean Oysters per Quad (adjusted for size)",
-       fill = "Zone (mid, low)") + # <-- Changed backticks to quotation marks here!
+       fill = "Zone (mid, low)") +
   theme_minimal() +
   scale_fill_manual(values = c("mid" = "#8DC8E4", "low" = "#E7B196"))
 
-# 1. Load data and clean names
+library(ggplot2)
 library(dplyr)
-install.packages("janitor")
-library(janitor)
+
+# 1. Prepare the plotting data (Filtering for 2023-2026 and Mid/Low zones)
+plot_summary_mid_low <- oyster_prep %>%
+  filter(Year >= 2023 & Year <= 2026) %>%
+  filter(`Zone (mid, low)` %in% c("mid", "low")) %>% 
+  filter(!is.na(`Oysters per quad (adjusted for quad size)`)) %>%
+  group_by(Year, `Zone (mid, low)`) %>%
+  summarize(
+    Mean_Density = mean(`Oysters per quad (adjusted for quad size)`),
+    .groups = "drop"
+  )
+
+# SCATTERPLOT: Year vs. Mean Oyster Density (Colored by Tidal Zone)
+ggplot(plot_summary_mid_low, aes(x = Year, y = Mean_Density, color = `Zone (mid, low)`)) +
+  geom_point(size = 4, alpha = 0.9) +
+  geom_line(aes(group = `Zone (mid, low)`), size = 1, linetype = "dashed") + # Adds a trend line for each zone
+  labs(
+    title = "Oyster Density Trends: Mid vs. Low Tidal Zones",
+    subtitle = "Annual mean density tracking (2023 - 2026)",
+    x = "Year",
+    y = "Mean Oysters per Quadrat (adjusted)",
+    color = "Tidal Zone"
+  ) +
+  scale_x_continuous(breaks = 2023:2026) + # Forces R to show actual year intervals
+  scale_color_manual(values = c("mid" = "#8DC8E4", "low" = "#E7B196")) +
+  theme_minimal() +
+  theme(panel.grid.minor = element_blank())
+
+#### 10. Ecological Association: Barnacle Co-occurrence ####
+
+# Clean names for programmatic clarity
 data <- X2026_analysis_Shoreline_Survey_Data_Cleaned_Data_2 %>%
   clean_names()
 
-# 2. Isolate the counts into variables for clarity
-# Total quadrats with oysters vs. total quadrats with barnacles
+# Isolate co-occurrence frequencies
 total_oysters <- sum(data$american_osyter_1_0 == 1, na.rm = TRUE)
 total_barnacles <- sum(data$acorn_barnacles == 1, na.rm = TRUE)
-
-# Quadrats where BOTH are present
 both_present <- sum(data$american_osyter_1_0 == 1 & data$acorn_barnacles == 1, na.rm = TRUE)
 
-# 3. Calculate Conditional Probabilities
+# Calculate Conditional Probabilities
 prob_barnacle_given_oyster <- both_present / total_oysters
 prob_oyster_given_barnacle <- both_present / total_barnacles
 
-# Print the descriptive results
 cat("1. If you find an oyster, the probability you find a barnacle is:", 
     round(prob_barnacle_given_oyster * 100, 2), "%\n")
-
 cat("2. If you find a barnacle, the probability you find an oyster is:", 
     round(prob_oyster_given_barnacle * 100, 2), "%\n")
 
-# 4. Statistical Test: Are these two proportions significantly different?
-# We compare the number of successes (both present) out of their respective totals
+# Statistical testing of proportions
 test_result <- prop.test(c(both_present, both_present), c(total_oysters, total_barnacles))
-
 print(test_result)
+
+
+#### 11. Ecological Association: Habitat Suitability Analysis ####
+
+# Load fresh copy of data
+data <- read_csv("~/Downloads/2026-analysis_Shoreline Survey Data - Cleaned Data-2.csv")
+
+# Define classifications of substrates
+suitable_cols <- c(
+  "Cobble", 
+  "Small Boulder", 
+  "Medium Boulder", 
+  "Large Boulder", 
+  "Boulder of unspecified size", 
+  "Bedrock/Ledge"
+)
+
+unsuitable_cols <- c(
+  "Mud", 
+  "Sand", 
+  "Gravel", 
+  "Pebble", 
+  "Shell", 
+  "Leaf Liter", 
+  "Unspecified movable rock"
+)
+
+# Classify each quadrat row based on substrate suitability presence
+has_suitable <- rowSums(data[, suitable_cols] == 1, na.rm = TRUE) > 0
+has_unsuitable <- rowSums(data[, unsuitable_cols] == 1, na.rm = TRUE) > 0
+
+habitat_data <- data.frame(
+  Oyster_Present = data$`American Osyter (1/0)` == 1,
+  Has_Suitable = has_suitable,
+  Has_Ununsuitable = has_unsuitable
+)
+
+# Assign habitat categorical hierarchy (Suitable overrides Unsuitable)
+habitat_data$Habitat_Type <- "Neither"
+habitat_data$Habitat_Type[habitat_data$Has_Ununsuitable] <- "Unsuitable"
+habitat_data$Habitat_Type[habitat_data$Has_Suitable] <- "Suitable"
+
+# Remove unclassified records
+habitat_filtered <- subset(habitat_data, Habitat_Type != "Neither")
+
+# Compute cross-tabulation table
+summary_table <- table(habitat_filtered$Habitat_Type, habitat_filtered$Oyster_Present)
+colnames(summary_table) <- c("Oyster Absent", "Oyster Present")
+pct_table <- prop.table(summary_table, margin = 1) * 100
+
+# Display results
+cat("=== Number of Quadrats in each Habitat ===\n")
+print(summary_table)
+cat("\n=== Percentage of Oyster Presence by Habitat Type ===\n")
+print(round(pct_table, 2))
+
+# Chi-Square Test of Association
+chisq_result <- chisq.test(summary_table)
+cat("\n=== Chi-Square Test of Association ===\n")
+print(chisq_result)
+
+
+#### 12. Mapping Suitability & Oyster Occupancy (Leaflet) ####
+
+# Re-define suitable and unsuitable lists for the local environment
+suitable_cols <- c("Cobble", "Small Boulder", "Medium Boulder", "Large Boulder", "Boulder of unspecified size", "Bedrock/Ledge")
+unsuitable_cols <- c("Mud", "Sand", "Gravel", "Pebble", "Shell", "Leaf Liter", "Unspecified movable rock")
+
+# Construct spatial coordinates mapping with parsed habitat classifications
+map_habitat_data <- clean_oysters_coordinates %>%
+  mutate(
+    Year = year(mdy(Date)),
+    Lat_num = as.numeric(Latitude),
+    Lon_num = as.numeric(Longitude)
+  ) %>%
+  mutate(
+    Correct_Lat = ifelse(!is.na(Lat_num) & Lat_num < 0, Lon_num, Lat_num),
+    Correct_Lon = ifelse(!is.na(Lat_num) & Lat_num < 0, Lat_num, Lon_num)
+  ) %>%
+  filter(!is.na(Correct_Lat), !is.na(Correct_Lon), Year != 2027) %>%
+  mutate(
+    Has_Suitable = rowSums(.[, suitable_cols] == 1, na.rm = TRUE) > 0,
+    Has_Unsuitable = rowSums(.[, unsuitable_cols] == 1, na.rm = TRUE) > 0,
+    Habitat_Type = case_when(
+      Has_Suitable ~ "Suitable",
+      Has_Unsuitable ~ "Unsuitable", 
+      TRUE ~ "Neither"
+    )
+  ) %>%
+  filter(Habitat_Type != "Neither") %>%
+  mutate(
+    Oyster_Presence = ifelse(`American Osyter (1/0)` == 1, "Oysters Present", "Oysters Absent"),
+    Map_Status = paste(Habitat_Type, "-", Oyster_Presence)
+  )
+
+# Palette creation for the 4 suitability-presence statuses
+status_colors <- colorFactor(
+  palette = c(
+    "Suitable - Oysters Present"   = "#98df8a",
+    "Suitable - Oysters Absent"    = "#2ca02c",
+    "Unsuitable - Oysters Present" = "#ff9896",
+    "Unsuitable - Oysters Absent"  = "#d62728"
+  ), 
+  domain = map_habitat_data$Map_Status
+)
+
+# Spatial rendering
+leaflet(map_habitat_data) %>%
+  addProviderTiles(providers$Esri.WorldImagery) %>% 
+  addCircleMarkers(
+    lng = ~Correct_Lon, 
+    lat = ~Correct_Lat, 
+    color = ~status_colors(Map_Status),
+    radius = 1.5, 
+    stroke = TRUE,
+    weight = 1,
+    fillColor = ~status_colors(Map_Status),
+    fillOpacity = 0.9,
+    popup = ~paste(
+      "<b>Site:</b>", Site, "<br>",
+      "<b>Habitat:</b>", Habitat_Type, "<br>",
+      "<b>Oysters:</b>", Oyster_Presence, "<br>",
+      "<b>Year:</b>", Year
+    )
+  ) %>%
+  addLegend(
+    pal = status_colors, 
+    values = ~Map_Status, 
+    title = "Habitat & Oyster Status", 
+    position = "bottomright"
+  )
+
+
+#### 13. Associated Species Mean Densities ####
+
+# Mean presence/absence densities of competing/associated organisms 
+avg_density_by_species_2 <- oyster_prep %>%
+  group_by(Site, Year) %>%
+  summarize(
+    Avg_American_Oyster = mean(`American Osyter (1/0)`, na.rm = TRUE),
+    Avg_European_Oyster = mean(`European Oyster (1/0)`, na.rm = TRUE),
+    Avg_Acorn_Barncle = mean(`Acorn Barnacles`, na.rm = TRUE),
+    Avg_Blue_Mussel = mean(`Blue Mussels`, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+print(avg_density_by_species_2)
