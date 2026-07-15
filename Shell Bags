@@ -1,13 +1,21 @@
-#### i. THEMES ####
+# ==============================================================================
+# SHELL BAGS SPAT ANALYSIS SCRIPT
+# ==============================================================================
+
+#### 1. Custom ggplot2 Themes ####
+
+library(ggplot2)
+# Feel free to load 'ggtext' if you use element_markdown in theme_dark_mode
+# library(ggtext) 
+
 theme_evan <- theme_bw() +
   theme(
     panel.grid.minor = element_blank(),
-    panel.grid.major.y = element_line(linetype = 'dashed',color = 'grey70'),
+    panel.grid.major.y = element_line(linetype = 'dashed', color = 'grey70'),
     panel.grid.major.x = element_blank(),
-    # panel.grid = element_blank(),
     legend.position = 'none',
     panel.border = element_rect(size = 0.5),
-    text = element_text(size=8),
+    text = element_text(size = 8),
     axis.text = element_text(size = 8), 
     plot.title = element_text(size = 9)
   )
@@ -17,25 +25,25 @@ theme_evan_facet <- theme_bw() +
     panel.grid.minor = element_blank(),
     panel.grid.major.y = element_blank(),
     panel.grid.major.x = element_blank(),
-    # panel.grid = element_blank(),
-    # legend.position = 'none',
     panel.border = element_rect(size = 0.5),
     strip.background = element_rect(fill = 'white'),
-    text = element_text(size=12),
+    text = element_text(size = 12),
     axis.text = element_text(size = 12), 
     plot.title = element_text(size = 13)
   )
+
 season_facet <- theme_evan_facet + theme(
   legend.position = 'none', 
   strip.background = element_blank(),
   strip.text = element_text(hjust = 0, margin = margin(0,0,0,0, unit = 'pt'))
 )
 
+# Dark mode theme relying on ggtext element_markdown for custom styling
 theme_dark_mode <- season_facet +
   theme(
-    axis.title.x = element_markdown(color = 'white'),
-    axis.title.y = element_markdown(color = 'white'),
-    strip.text.x.top = element_markdown(color = 'white', size=12),
+    axis.title.x = ggtext::element_markdown(color = 'white'),
+    axis.title.y = ggtext::element_markdown(color = 'white'),
+    strip.text.x.top = ggtext::element_markdown(color = 'white', size = 12),
     panel.grid.major.x = element_line(color = 'grey90', linewidth = 0.25),
     panel.grid.major.y = element_line(color = 'grey90', linewidth = 0.25),
     panel.grid.minor.x = element_line(color = 'grey90', linewidth = 0.1),
@@ -43,22 +51,26 @@ theme_dark_mode <- season_facet +
     text = element_text(color = 'white'),
     panel.background = element_rect(fill = 'black'),
     plot.background = element_rect(fill = 'black'),
-    # axis.text = element_markdown(color = 'white'),
     axis.text = element_text(color = 'white'),
     panel.border = element_rect(color = 'white'),
     legend.background = element_rect(color = 'white', fill = 'black'),
     legend.key = element_rect(fill = 'black')
   ) 
 
-####Data Analysis (general)####
+
+#### 2. Setup & Data Loading ####
 
 library(readr)
 library(dplyr)
 library(lubridate)
+library(tidyverse)
 
 setwd("~")
 
 Shell_Bags <- read_csv("Desktop/2026_analysis_shell bags - Sheet1.csv")
+
+
+#### 3. Annual Spat Density Summary ####
 
 spat_annual_summary <- Shell_Bags %>%
   mutate(
@@ -77,6 +89,9 @@ spat_annual_summary <- Shell_Bags %>%
   )
 
 print(spat_annual_summary)
+
+
+#### 4. Tidal Zone Summary (2024) ####
 
 zone_summary_2024 <- Shell_Bags %>%
   mutate(
@@ -97,8 +112,10 @@ zone_summary_2024 <- Shell_Bags %>%
 
 print(zone_summary_2024)
 
-library(ggplot2)
 
+#### 5. Seasonal Spat Density & Visualization ####
+
+# Fixed the pipeline syntax here so 'mutate' and 'print' work smoothly
 seasonal_summary_2024 <- Shell_Bags %>%
   mutate(
     Date_Collected = mdy(`Date collected?`),
@@ -109,12 +126,14 @@ seasonal_summary_2024 <- Shell_Bags %>%
   group_by(Date_Collected, Zone) %>%
   summarise(
     Avg_Total_Spat = mean(total_spat, na.rm = TRUE),
-    .groups = "drop",
+    .groups = "drop"
   ) %>%
-  print(n=31)
   mutate(Zone = factor(Zone, levels = c("Low", "Mid", "High")))
 
+# View the formatted summary tibble safely
+print(seasonal_summary_2024, n = 31)
 
+# Plot: Average Spat per Bag Over the 2024 Season
 ggplot(seasonal_summary_2024, aes(x = Date_Collected, y = Avg_Total_Spat, color = Zone, group = Zone)) +
   geom_line(linewidth = 1.2) +
   geom_point(size = 3) +
@@ -129,51 +148,63 @@ ggplot(seasonal_summary_2024, aes(x = Date_Collected, y = Avg_Total_Spat, color 
   ) +
   theme(
     plot.title = element_text(face = "bold", size = 13),
-    axis.text.x = element_text(angle = 45, hjust = 1) # Rotate dates to prevent overlap
+    axis.text.x = element_text(angle = 45, hjust = 1) 
   )
 
-#other species copresense with oysters
+
+#### 6. Ecological Associations (Mussels, Barnacles, Algae) ####
+
+# Calculate presence rates across all processed bags
 mussel_presence <- mean(Shell_Bags$Mussel > 0, na.rm = TRUE)
 barnacle_presense <- mean(Shell_Bags$Barnacle > 0, na.rm = TRUE)
 
+# Subset to bags where mussels were actively present
 Mussels <- Shell_Bags %>%
   filter(Mussel > 0, !is.na(Mussel))
 
+# Calculate seaweed presence specifically inside mussel-dense bags
 Algae_and_mussel <- mean(Mussels$Seaweed > 0, na.rm = TRUE)
 
-#Statisticly signifant diff. in the number of spat throughout the year
+
+#### 7. Statistical Testing: Wilcoxon Date Comparison ####
+
 Corrected_dates <- Shell_Bags %>%
   mutate(
     Clean_Date = ifelse(is.na(`Date processed`), `Date collected?`, `Date processed`),
     Year       = year(mdy(Clean_Date))
   ) %>%
   filter(!is.na(Year), !is.na(total_spat))
-  
+
+# Filter down to compare two specific autumn dates
 compare_data <- Corrected_dates %>%
-  filter(`Date collected?` %in% c("10/2/24", "9/19/24"))
+  filter(`Date collected?` %in= c("10/2/24", "9/19/24"))
 
 compare_data %>%
   group_by(`Date collected?`) %>%
   summarise(
     Avg_Spat = mean(spat_alive, na.rm = TRUE),
-    Sample_Size = n()
+    Sample_Size = n(),
+    .groups = "drop"
   )
 
+# Non-parametric assessment of live spat counts between these dates
 wilcox.test(spat_alive ~ `Date collected?`, data = compare_data)
 
-#New Graphic
-library(tidyverse)
+
+#### 8. Statistical Testing: Global Kruskal-Wallis & Boxplot ####
 
 df_clean <- Shell_Bags %>%
   filter(!is.na(`Date collected?`), !is.na(spat_alive)) %>%
   mutate(Date_Parsed = lubridate::mdy(`Date collected?`)) %>%
   filter(lubridate::year(Date_Parsed) == 2024)
 
+# Calculate overall significance value across all collection dates
 global_p <- kruskal.test(spat_alive ~ Date_Parsed, data = df_clean)$p.value
 
+# Plot: Boxplot distribution of live spat counts by collection date
 ggplot(df_clean, aes(x = Date_Parsed, y = spat_alive, group = Date_Parsed)) +
   geom_boxplot(aes(fill = as.factor(`Date collected?`)), alpha = 0.6, outlier.shape = NA) +
-  geom_jitter(width = 0.5, alpha = 0.5, color = "black") +
+  geom_jitter(width = 0.5, alpha = .5, color = "black") +
   scale_x_date(date_labels = "%m/%d/%y", date_breaks = "1 week") +
   labs(
     title = "Spat Distribution Over Time",
@@ -188,30 +219,26 @@ ggplot(df_clean, aes(x = Date_Parsed, y = spat_alive, group = Date_Parsed)) +
     legend.position = "none"
   )
 
-#New graphic
-library(tidyverse)
 
-df_clean <- Shell_Bags %>%
-  filter(!is.na(`Date collected?`), !is.na(spat_alive)) %>%
-  mutate(Date_Parsed = lubridate::mdy(`Date collected?`)) %>%
-  filter(lubridate::year(Date_Parsed) == 2024)
+#### 9. Post-Hoc Pairwise Testing & Heatmap ####
 
+# Run pairwise Wilcoxon tests with Holm corrections
 pairwise_results <- pairwise.wilcox.test(
   x = df_clean$spat_alive, 
   g = df_clean$`Date collected?`, 
   p.adjust.method = "holm"
 )
 
-# 2. Extract the matrix safely
-p_matrix <- honest_p <- pairwise_results$p.value
+# Extract significance matrix safely
+p_matrix <- pairwise_results$p.value
 
-# 3. Force it into a long-form dataframe manually to avoid pmap issues
+# Reshape the triangular matrix into long form for plotting
 p_df <- as.data.frame(p_matrix) %>%
   rownames_to_column(var = "Date1") %>%
   pivot_longer(-Date1, names_to = "Date2", values_to = "p_value") %>%
-  filter(!is.na(p_value)) # Removes the empty half of the grid
+  filter(!is.na(p_value))
 
-# 4. Create the heatmap plot
+# Plot: Pairwise significance heatmap
 ggplot(p_df, aes(x = Date1, y = Date2, fill = p_value)) +
   geom_tile(color = "white", lwd = 0.5) +
   scale_fill_gradient2(low = "#d7191c", mid = "#ffffbf", high = "#2c7bb6", 
@@ -221,4 +248,166 @@ ggplot(p_df, aes(x = Date1, y = Date2, fill = p_value)) +
        subtitle = "Red boxes indicate significant differences (p < 0.05)",
        x = "", y = "") +
   theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+#### 10. Cumulative Settlement and Spat Survival ####
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(lubridate)
+library(janitor)
+
+# 1. Clean and prepare the sequential deployment data
+survival_cumulative <- Shell_Bags %>%
+  # Clean names to automatically handle trailing spaces in column headers
+  clean_names() %>% 
+  mutate(
+    Date_Collected = mdy(date_collected),
+    Year           = year(Date_Collected)
+  ) %>%
+  # Focus on the 2024 season
+  filter(Year == 2024, !is.na(Date_Collected)) %>%
+  group_by(Date_Collected) %>%
+  summarise(
+    # "Live Spat" is the active living cohort found at retrieval
+    Active_Live = mean(spat_alive, na.rm = TRUE),
+    # "Dead Spat" is the accumulated mortality since deployment
+    Accumulated_Dead = mean(spat_dead, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  # Reshape for ggplot
+  pivot_longer(
+    cols = c(Active_Live, Accumulated_Dead), 
+    names_to = "Cohort_Status", 
+    values_to = "Avg_Spat"
+  ) %>%
+  # Make factor levels intuitive for the stacked legend
+  mutate(Cohort_Status = factor(
+    Cohort_Status, 
+    levels = c("Accumulated_Dead", "Active_Live"),
+    labels = c("Accumulated Dead (Mortality)", "Active Live Spat (Standing Crop)")
+  ))
+
+# 2. Plot cumulative history of the shell bags
+ggplot(survival_cumulative, aes(x = Date_Collected, y = Avg_Spat, fill = Cohort_Status)) +
+  # Stacked columns show the total cumulative settlement over time
+  geom_col(position = "stack", width = 6, color = "white", size = 0.2) +
+  scale_fill_manual(values = c(
+    "Accumulated Dead (Mortality)" = "#e57373",      # Soft red for accumulated losses
+    "Active Live Spat (Standing Crop)" = "#4fc3f7"  # Soft blue for current survivors
+  )) +
+  scale_x_date(date_breaks = "2 weeks", date_labels = "%b %d") +
+  theme_evan + # Uses your custom light theme
+  labs(
+    title = "Cumulative Larval Settlement & Standing Live Spat (Basin 2024)",
+    subtitle = "Total height of bars shows total settlement over time; dead spat represents accumulated mortality.",
+    x = "Retrieval Date (Bags accumulated spat since start of season)",
+    y = "Average Spat per Bag",
+    fill = "Spat Status"
+  ) +
+  theme(
+    plot.title = element_text(face = "bold", size = 11),
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "bottom",
+    legend.direction = "vertical"
+  )
+
+#### 11. ANOVA: Spat Settlement by Tidal Zone (2024) ####
+library(dplyr)
+library(lubridate)
+library(janitor)
+library(ggplot2)
+
+anova_df <- Shell_Bags %>%
+  clean_names() %>%
+  mutate(
+    Date_Parsed = mdy(date_collected),
+    Year = year(Date_Parsed),
+    Zone = tools::toTitleCase(tolower(zone_low_mid_high))
+  ) %>%
+  # Filter for valid 2024 records with recorded spat values
+  filter(Year == 2024, !is.na(Zone), !is.na(total_spat)) %>%
+  mutate(Zone = factor(Zone, levels = c("Low", "Mid", "High")))
+
+anova_bags <- aov(total_spat ~ Zone, data = anova_df)
+
+summary(anova_bags)
+
+TukeyHSD(anova_bags)
+
+anova_sqrt <- aov(sqrt(total_spat) ~ Zone, data = anova_df)
+
+plot(anova_sqrt, which = 2)
+plot(anova_sqrt, which = 1)
+
+glm_quasi <- glm(total_spat ~ Zone, family = quasipoisson(link = "log"), data = anova_df)
+summary(glm_quasi)
+
+#### 12. Barplot of total spat settled across tidal zones (Season Total) ####
+library(ggplot2)
+library(dplyr)
+library(lubridate)
+library(janitor)
+
+# Prepare clean baseline 2024 data
+df_viz <- Shell_Bags %>%
+  clean_names() %>%
+  mutate(
+    Date_Parsed = mdy(date_collected),
+    Year = year(Date_Parsed),
+    Zone = tools::toTitleCase(tolower(zone_low_mid_high))
+  ) %>%
+  filter(Year == 2024, !is.na(Zone), !is.na(total_spat)) %>%
+  mutate(Zone = factor(Zone, levels = c("Low", "Mid", "High")))
+
+total_by_zone <- df_viz %>%
+  group_by(Zone) %>%
+  summarise(Seasonal_Sum = sum(total_spat, na.rm = TRUE), .groups = "drop")
+
+ggplot(total_by_zone, aes(x = Zone, y = Seasonal_Sum, fill = Zone)) +
+  geom_col(color = "black", width = 0.6) +
+  scale_fill_manual(values = c("Low" = "#84A6E7", "Mid" = "#7BC8E7", "High" = "#8EE4DD")) +
+  theme_evan +
+  labs(
+    title = "Total Seasonal Spat Settlement by Tidal Zone (2024)",
+    x = "Tidal Zone",
+    y = "Total Spat Settled (Sum of All Bags)"
+  )
+
+#### 13. Side-by-side (dodged) barplot of discrete spat settlement vs. time ####
+discrete_time_zone <- df_viz %>%
+  group_by(Date_Parsed, Zone) %>%
+  summarise(Avg_Spat = mean(total_spat, na.rm = TRUE), .groups = "drop")
+
+ggplot(discrete_time_zone, aes(x = factor(Date_Parsed), y = Avg_Spat, fill = Zone)) +
+  geom_col(position = "dodge", color = "white", width = 0.7) +
+  scale_fill_manual(values = c("Low" = "#84A6E7", "Mid" = "#7BC8E7", "High" = "#8EE4DD")) +
+  theme_evan +
+  labs(
+    title = "Discrete Mean Spat Settlement Over Time",
+    x = "Collection Date",
+    y = "Average Spat per Bag",
+    fill = "Tidal Zone"
+  ) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+
+#### 14. Scatterplot of cumulative spat settled vs. time ####
+cumulative_spat <- df_viz %>%
+  group_by(Date_Parsed) %>%
+  summarise(Daily_Total = sum(total_spat, na.rm = TRUE), .groups = "drop") %>%
+  arrange(Date_Parsed) %>%
+  mutate(Cumulative_Spat = cumsum(Daily_Total)) # Calculates running total
+
+ggplot(cumulative_spat, aes(x = Date_Parsed, y = Cumulative_Spat)) +
+  geom_line(color = "grey50", linetype = "dashed", size = 0.8) +
+  geom_point(color = "#2c7bb6", size = 3.5) +
+  scale_x_date(date_breaks = "2 weeks", date_labels = "%b %d") +
+  theme_evan +
+  labs(
+    title = "Cumulative Spat Settlement Over Time (All Zones)",
+    subtitle = "Running total of all settled spat throughout 2024",
+    x = "Date",
+    y = "Total Cumulative Spat Settled"
+  ) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1))
