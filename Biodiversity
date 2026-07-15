@@ -1,0 +1,93 @@
+#### Library packages ####
+
+library(readr)
+install.packages("vegan")
+library(vegan)
+library(dplyr)
+
+#### 1. Comparing the Shannon Index of quads w/ and w/o oysters ####
+bio_data <- read_csv("~/Downloads/2026_analysis_Biodiversity - Sheet1.csv")
+
+colnames(bio_data) <- make.names(colnames(bio_data))
+
+bio_data <- bio_data %>%
+  mutate(Oyster_Present = ifelse(American.oyster > 0 | European.osyter > 0, "Present", "Absent"))
+
+metadata_cols <- c("Date", "Site", "Transect", "Quadrat", "American.oyster", "European.osyter", "Oyster_Present")
+species_matrix <- bio_data[, !(names(bio_data) %in% metadata_cols)]
+
+species_matrix <- as.matrix(sapply(species_matrix, as.numeric))
+species_matrix[is.na(species_matrix)] <- 0 
+
+bio_data$Shannon_H <- diversity(species_matrix, index = "shannon")
+
+summary_stats <- bio_data %>%
+  group_by(Oyster_Present) %>%
+  summarise(
+    Count = n(),
+    Mean_Shannon = mean(Shannon_H, na.rm = TRUE),
+    SD_Shannon = sd(Shannon_H, na.rm = TRUE)
+  )
+
+print("=== Summary Statistics ===")
+print(summary_stats)
+
+t_test_result <- t.test(Shannon_H ~ Oyster_Present, data = bio_data)
+
+print("=== T-Test Results ===")
+print(t_test_result)
+
+wilcox_result <- wildox_test <- wilcox.test(Shannon_H ~ Oyster_Present, data = bio_data)
+print("=== Wilcoxon Rank Sum Test Results ===")
+print(wilcox_result)
+
+#### 2. Shannon Index by location and year ####
+if(!require(vegan)) install.packages("vegan")
+if(!require(dplyr)) install.packages("dplyr")
+if(!require(lubridate)) install.packages("lubridate")
+
+library(vegan)
+library(dplyr)
+library(lubridate)
+
+bio_data <- read_csv("~/Downloads/2026_analysis_Biodiversity - Sheet1.csv")
+
+colnames(bio_data) <- make.names(colnames(bio_data))
+
+bio_data <- bio_data %>%
+  mutate(
+    Clean_Date = mdy(Date),
+    Year = year(Clean_Date)
+  )
+
+metadata_cols <- c("Date", "Clean_Date", "Year", "Site", "Transect", "Quadrat", "American.oyster.", "European.osyter")
+species_matrix <- bio_data[, !(names(bio_data) %in% metadata_cols)]
+
+species_matrix <- as.matrix(sapply(species_matrix, as.numeric))
+species_matrix[is.na(species_matrix)] <- 0
+
+bio_data$Shannon_H <- diversity(species_matrix, index = "shannon")
+
+biodiversity_by_site_year <- bio_data %>%
+  group_by(Site, Year) %>%
+  summarize(
+    Avg_Shannon_H = mean(Shannon_H, na.rm = TRUE),
+    Min_Shannon_H = min(Shannon_H, na.rm = TRUE),
+    Max_Shannon_H = max(Shannon_H, na.rm = TRUE),
+    Total_Samples  = n(),
+    .groups = "drop"
+  )
+
+print(biodiversity_by_site_year)
+
+library(ggplot2)
+
+ggplot(biodiversity_by_site_year, aes(x = factor(Year), y = Avg_Shannon_H, fill = Site)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  labs(
+    title = "Average Shannon Diversity Index by Site and Year",
+    x = "Year",
+    y = "Average Shannon Index (H)"
+  ) +
+  theme_minimal()
+
